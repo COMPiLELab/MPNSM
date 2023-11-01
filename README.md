@@ -4,7 +4,7 @@ A nonlinear spectral core-periphery detection method for multiplex networks
 This repository contains julia codes reproducing the numerical results presented in [Section 6, 1].
 
 **Paper:**
-[1] K. Bergermann, M. Stoll, and F. Tudisco, A nonlinear spectral core-periphery detection method for multiplex networks, Preprint (2023)
+[1] K. Bergermann, M. Stoll, and F. Tudisco, A nonlinear spectral core-periphery detection method for multiplex networks, [arXiv:2310.19697](https://arxiv.org/pdf/2310.19697.pdf) (2023)
 
 **Version:**
 All codes were tested with julia v1.4.1 on Ubuntu 20.04.6 LTS.
