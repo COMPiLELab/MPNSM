@@ -332,7 +332,7 @@ function compute_QUBO(A, A1, x, c, n, L)
 		N2[k] = n*n - N1[k] # missing edges in layer k
 	end
 
-	fff(x) = eval_qubo_f(A1,x,c,N1,N2)
+	fff(x,x_prev) = eval_qubo_f(A1,x,x_prev,c,N1,N2)
 	opt_core_size, opt_QUBO_value = sweep_binary_vector(x, fff)
 	
 	println("-------------------------------------------------")
@@ -428,34 +428,48 @@ function sweep_binary_vector(x::Vector{Float64}, fun)
 	#		bestval:	QUBO objective function value corresponding to s* computed by
 	#				[Equation (5.3), 1].
 	
-	y = zeros(length(x))
+	y = convert(Vector{Bool}, zeros(length(x)))
 	p = sortperm(x,rev=true)
 	bestval = 0
 	bestindex = 1
 	println("Progress on QUBO sweep:")
-	for k in tqdm(1:length(x))
+	
+	# First binary vector
+	y[p[1]] = 1
+	y_prev = copy(y)
+	fy = fun(y,y_prev)
+	fy_prev = copy(fy)
+	bestval = fy
+	bestindex = 1
+	
+	# Update of one additional non-zero in binary vector
+	for k in tqdm(2:length(x))
 		y[p[k]] = 1
-		fy = fun(y)
+		fy_update = fun(y,y_prev)
+		fy = fy_prev + fy_update
+		fy_prev = copy(fy)
 		if fy > bestval
 			bestval = fy
 			bestindex = k
 		end
+		y_prev = copy(y)
 	end
 	
 	return bestindex, bestval
 end
 
 
-function eval_qubo_f(A1, x::Vector{Float64}, c::Vector{Float64}, N1::Vector{Float64}, N2::Vector{Float64})
+function eval_qubo_f(A1, x::Vector{Bool}, x_prev::Vector{Bool}, c::Vector{Float64}, N1::Vector{Float64}, N2::Vector{Float64})
 	# Routine used within 'sweep_binary_vector' to evaluate [Equation (5.3), 1].
 	#
 	# Input:	A1:	adjacency tensor in CSC-format (A1[l] contains the adjacency matrix of layer l)
-	#		x:	a given binary vector from the sweeping procedure,
+	#		x:	new binary vector from the sweeping procedure,
+	#		x_prev: previous binary vector from the sweeping procedure,
 	#		c:	optimized layer coreness vector c (fixed for all binary vectors x),
 	#		N1:	vector of present edges in the layers,
 	#		N2:	vector of missing edges in the layers.
 	#
-	# Output:	f:	value of [Equation (5.3), 1] for given input.
+	# Output:	f:	update of [Equation (5.3), 1] for the new non-zero entry in x compared to x_prev.
 	
 	n = size(A1[1],1)
 	L = length(N1)
@@ -463,11 +477,28 @@ function eval_qubo_f(A1, x::Vector{Float64}, c::Vector{Float64}, N1::Vector{Floa
 	
 	norm_c = norm(c,1)
 	
-	for l=1:L
-		Dl = spdiagm(0 => sum(A1[l], dims=2)[:,1])
-	
-		f += c[l]/norm_c * (x'*(2*(1/N1[l] + 1/N2[l])*Dl - 2*(n-1)*(1/N2[l])*spdiagm(0 => ones(n)) - (1/N1[l] + 1/N2[l])*A1[l])*x + (1/N2[l])*(sum(x)^2 - sum(x)))
+	if sum(x)==1
+		i = findall(x->x==1, x)
+		for l=1:L
+			if !(N1[l]==0 || N2[l]==0)
+				f += c[l]/norm_c * (2*(1/N1[l] + 1/N2[l])*sum(A1[l], dims=2)[i,1][1] - 2*(n-1)*(1/N2[l]) - (1/N1[l] + 1/N2[l])*A1[l][i,i][1])
+			end
+		end
+	else
+		i = findall(x->x==1, x-x_prev)
+		for l=1:L
+			if !(N1[l]==0 || N2[l]==0)
+				nnz_x_prev = findall(x->x!=0, x_prev)
+				f += c[l]/norm_c * (2*(1/N1[l] + 1/N2[l])*sum(A1[l], dims=2)[i,1][1] - 2*(n-1)*(1/N2[l]) - (1/N1[l]+ 1/N2[l])*(2*sum(A1[l][i,:][1,nnz_x_prev])+A1[l][i,i][1]) + 2*(1/N2[l])*sum(x_prev))
+			end
+		end
 	end
+	
+	#for l=1:L
+	#	Dl = spdiagm(0 => sum(A1[l], dims=2)[:,1])
+	#
+	#	f += c[l]/norm_c * (x'*(2*(1/N1[l] + 1/N2[l])*Dl - 2*(n-1)*(1/N2[l])*spdiagm(0 => ones(n)) - (1/N1[l] + 1/N2[l])*A1[l])*x + (1/N2[l])*(sum(x)^2 - sum(x)))
+	#end
 		
 	return f
 end
